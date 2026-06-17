@@ -1,0 +1,11 @@
+{
+  "name": "ola-paperclip",
+  "private": true,
+  "scripts": {
+    "setup": "paperclipai onboard --yes",
+    "start": "paperclipai run",
+    "doctor": "paperclipai doctor",
+    "configure": "paperclipai configure",
+    "tunnel": "npx localtunnel --port 3100"
+  }
+}
