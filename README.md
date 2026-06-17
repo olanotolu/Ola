@@ -2,6 +2,14 @@
 
 Local Paperclip instance for managing AI agent companies.
 
+## Links
+
+| What | URL |
+|---|---|
+| GitHub | https://github.com/olanotolu/Ola |
+| Vercel landing (redirect) | https://ola-paperclip.vercel.app |
+| Paperclip dashboard (tunnel) | https://famous-webs-enter.loca.lt |
+
 ## Live demo (temporary)
 
 While your Mac is running Paperclip + the Cloudflare tunnel:
