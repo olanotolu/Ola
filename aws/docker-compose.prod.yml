@@ -1,0 +1,26 @@
+services:
+  paperclip:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3100"
+      PAPERCLIP_HOME: "/paperclip"
+      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public"
+      PAPERCLIP_AUTH_PUBLIC_BASE_URL: "${PAPERCLIP_PUBLIC_URL}"
+      PAPERCLIP_AUTH_BASE_URL_MODE: "explicit"
+      PAPERCLIP_ENABLE_COMPANY_DELETION: "false"
+      PAPERCLIP_STORAGE_PROVIDER: "s3"
+      PAPERCLIP_STORAGE_S3_BUCKET: "${PAPERCLIP_S3_BUCKET}"
+      PAPERCLIP_STORAGE_S3_REGION: "${AWS_REGION:-us-east-1}"
+      DATABASE_URL: "${DATABASE_URL}"
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY}"
+    volumes:
+      - paperclip-data:/paperclip
+
+volumes:
+  paperclip-data:

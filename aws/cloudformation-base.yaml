@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Ola Paperclip - single EC2 + RDS Postgres + S3 (dev-normal)
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.small
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  AllowedSSHCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR allowed to SSH (restrict to your IP in production)
+
+Resources:
+  PaperclipBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  BetterAuthSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: ola-paperclip/better-auth-secret
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: secret
+        PasswordLength: 48
+        ExcludeCharacters: '"@/\'
+
+  DeepSeekSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: ola-paperclip/deepseek-api-key
+      Description: DeepSeek API key for Paperclip agents
+      SecretString: "REPLACE_ME"
+
+  DbPasswordSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: ola-paperclip/db-password
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"paperclip"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+
+  Ec2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Paperclip EC2
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedSSHCidr
+        - IpProtocol: tcp
+          FromPort: 3100
+          ToPort: 3100
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Paperclip RDS
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref Ec2SecurityGroup
+
+  PaperclipDbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Paperclip RDS subnets
+      SubnetIds: !Split
+        - ","
+        - !Join
+          - ","
+          - - !Select [0, !GetAZs ""]
+            - !Select [1, !GetAZs ""]
+
+  # Use default VPC subnets via custom resource workaround - simpler: use default VPC subnets
+  # CloudFormation needs explicit subnet IDs - deploy script will pass them
+
+  PaperclipRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: PaperclipApp
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref BetterAuthSecret
+                  - !Ref DeepSeekSecret
+                  - !Ref DbPasswordSecret
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt PaperclipBucket.Arn
+                  - !Sub "${PaperclipBucket.Arn}/*"
+
+  PaperclipInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref PaperclipRole
+
+Outputs:
+  BucketName:
+    Value: !Ref PaperclipBucket
+  BetterAuthSecretArn:
+    Value: !Ref BetterAuthSecret
+  DeepSeekSecretArn:
+    Value: !Ref DeepSeekSecret
+  DbPasswordSecretArn:
+    Value: !Ref DbPasswordSecret
+  Ec2SecurityGroupId:
+    Value: !Ref Ec2SecurityGroup
+  RdsSecurityGroupId:
+    Value: !Ref RdsSecurityGroup
+  InstanceProfileArn:
+    Value: !GetAtt PaperclipInstanceProfile.Arn
