@@ -1,0 +1,55 @@
+{
+  "product_name": "Concya",
+  "product_hook": "agentic GM layer — guest requests, shift routing, and ops in one system",
+  "sender_name": "Ola",
+  "blocks": {
+    "pain_keyword": "You flagged {{intent_keyword}} — that's exactly where properties bleed margin before anyone notices.",
+    "pain_hospitality": "Most GMs still run guest requests, shift gaps, and vendor follow-ups across three different tools.",
+    "value_exec": "{{product_name}} sits on top of what you already use — one agentic layer for guest ops and staff routing.",
+    "value_manager": "{{product_name}} cuts the back-and-forth between front desk, housekeeping, and F&B when something breaks mid-shift.",
+    "cta_soft": "Worth 12 minutes this week to see if it maps to your stack?",
+    "cta_direct": "Open to a 15-min walkthrough?",
+    "linkedin_short": "Running {{company}} — saw the overlap on ops/scheduling. Building {{product_name}} for exactly that. Open to connect?",
+    "unsubscribe": "\n\n—\nReply STOP to opt out. Concya, hello@concya.com"
+  },
+  "intent_templates": {
+    "linkedin_post": {
+      "email_opener": "Hi {{first_name}} — you engaged with a post on {{pain_topic}} recently.",
+      "email_body": "{{pain_line}}\n\n{{value_line}}\n\nPost for context: {{post_url}}\n\n{{cta}}",
+      "linkedin": "Hi {{first_name}} — noticed you engaged with content around {{pain_topic}}. We're building {{product_name}} for {{company}}-type ops pain. {{post_url}} — open to connect?"
+    },
+    "author_post": {
+      "email_opener": "Hi {{first_name}} — you engaged with {{post_author}}'s post recently.",
+      "email_body": "{{pain_line}}\n\n{{value_line}}\n\n{{cta}}",
+      "linkedin": "Hi {{first_name}} — saw you engaged with {{post_author}}'s post. {{product_name}} is built for {{pain_topic}} at properties like {{company}}. Worth a connect?"
+    },
+    "lookalike": {
+      "email_opener": "Hi {{first_name}} — {{company}} fits the profile of properties we built {{product_name}} for.",
+      "email_body": "{{pain_line}}\n\n{{value_line}}\n\nNo pitch deck — just a live look at how we handle {{pain_topic}}.\n\n{{cta}}",
+      "linkedin": "Hi {{first_name}} — {{company}} looks like a strong fit for what we're doing with {{product_name}} (hospitality ops + scheduling). Open to connect?"
+    },
+    "just_hired": {
+      "email_opener": "Hi {{first_name}} — congrats on the new role at {{company}}.",
+      "email_body": "First 90 days is usually audit-everything season — vendors, scheduling tools, guest request workflows.\n\n{{value_line}}\n\n{{cta}}",
+      "linkedin": "Hi {{first_name}} — congrats on {{company}}. New-in-role is when most GMs re-audit scheduling and guest ops tools — that's what {{product_name}} is built for. Connect?"
+    },
+    "top_active": {
+      "email_opener": "Hi {{first_name}} — you're in the top slice of hospitality operators we track on LinkedIn.",
+      "email_body": "{{pain_line}}\n\n{{value_line}}\n\n{{cta}}",
+      "linkedin": "Hi {{first_name}} — active voice in hospitality ops. Building {{product_name}} for {{pain_topic}} — would value your take. Connect?"
+    },
+    "unknown": {
+      "email_opener": "Hi {{first_name}} — quick note on {{company}}.",
+      "email_body": "{{pain_line}}\n\n{{value_line}}\n\n{{cta}}",
+      "linkedin": "Hi {{first_name}} — {{company}} + {{product_name}} might be a fit on ops/scheduling. Open to connect?"
+    }
+  },
+  "subject_variants": {
+    "linkedin_post": ["Re: that {{pain_topic}} post", "{{company}} + guest ops"],
+    "author_post": ["Following {{post_author}}'s thread", "{{company}} scheduling"],
+    "lookalike": ["{{company}} — ops layer", "Quick one for {{first_name}}"],
+    "just_hired": ["First 90 days at {{company}}", "New role — tool audit?"],
+    "top_active": ["{{first_name}} — hospitality ops", "{{company}} scheduling"],
+    "unknown": ["{{company}} ops", "Quick intro"]
+  }
+}

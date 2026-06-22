@@ -1,11 +1,25 @@
 {
   "name": "ola-paperclip",
   "private": true,
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.8"
+  },
   "scripts": {
+    "vercel:build": "rm -rf public/crm-static && mkdir -p public && cp -r getleads/public/* public/",
     "setup": "paperclipai onboard --yes",
     "start": "paperclipai run",
     "doctor": "paperclipai doctor",
     "configure": "paperclipai configure",
-    "tunnel": "npx localtunnel --port 3100"
+    "tunnel": "npx localtunnel --port 3100",
+    "getleads:config": "getleads config show --profile ola-leads-testing",
+    "getleads:login": "getleads auth login --email \"$GETLEADS_EMAIL\" --password \"$GETLEADS_PASSWORD\" --profile ola-leads-testing --env-file getleads/.env.getleads",
+    "getleads:me": "getleads auth me --profile ola-leads-testing --json",
+    "getleads:keys": "getleads keys list --profile ola-leads-testing --json",
+    "getleads:search": "getleads v1 contacts search --body @getleads/search.json --profile ola-leads-testing --json",
+    "getleads:health": "getleads call GET /api/health --profile ola-leads-testing --json",
+    "getleads:ui": "node getleads/server.mjs",
+    "getleads:enrich": "node getleads/enrich-worker.mjs",
+    "getleads:gojiberry": "node getleads/gojiberry-import.mjs"
   }
 }

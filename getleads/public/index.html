@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ola Leads · Concya CRM</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">Ola Leads</div>
+      <div class="brand-sub">Concya CRM · Live</div>
+    </div>
+    <nav>
+      <button class="nav-btn active" data-panel="crm">CRM Live</button>
+      <button class="nav-btn" data-panel="connect">Connect</button>
+      <button class="nav-btn" data-panel="search">Contact Search</button>
+      <button class="nav-btn" data-panel="signals">Funding Signals</button>
+      <button class="nav-btn" data-panel="dashboard">Dashboard</button>
+      <button class="nav-btn" data-panel="keys">API Keys</button>
+    </nav>
+    <div class="status-pill" id="sidebar-status">
+      <span class="status-dot off"></span> Checking…
+    </div>
+  </aside>
+
+  <main>
+    <!-- CRM Live -->
+    <section class="panel active" id="panel-crm">
+      <header class="page-header">
+        <div class="row" style="justify-content:space-between;align-items:flex-start;width:100%">
+          <div>
+            <h1>Concya CRM</h1>
+            <p>Live hospitality operators &amp; enriched contacts from Supabase. Auto-refreshes while enrichment runs.</p>
+          </div>
+          <div class="row">
+            <span id="crm-live-badge" class="badge badge-ok">● Live</span>
+            <button class="btn btn-secondary" id="crm-refresh-btn">Refresh</button>
+          </div>
+        </div>
+      </header>
+
+      <div id="crm-stats" class="stats-grid" style="margin-bottom:1rem"></div>
+
+      <div class="card" id="crm-run-card">
+        <h2>Enrichment run</h2>
+        <div id="crm-run-status" class="empty">Loading…</div>
+      </div>
+
+      <div class="crm-tabs">
+        <button class="crm-tab active" data-crm-tab="contacts">Contacts</button>
+        <button class="crm-tab" data-crm-tab="accounts">Operators</button>
+      </div>
+
+      <div class="card crm-tab-panel active" id="crm-tab-contacts">
+        <div class="toolbar">
+          <input id="crm-contact-search" type="search" placeholder="Search name, email, operator…" />
+          <label class="check-label"><input type="checkbox" id="crm-email-only" /> Has email</label>
+          <label class="check-label"><input type="checkbox" id="crm-linkedin-only" checked /> Has LinkedIn</label>
+          <label class="check-label"><input type="checkbox" id="crm-gojiberry-only" /> Gojiberry only</label>
+        </div>
+        <div class="table-wrap" id="crm-contacts-table">
+          <div class="empty">Loading contacts…</div>
+        </div>
+        <p class="table-meta" id="crm-contacts-meta"></p>
+      </div>
+
+      <div class="card crm-tab-panel" id="crm-tab-accounts">
+        <div class="toolbar">
+          <input id="crm-account-search" type="search" placeholder="Search operator name…" />
+          <select id="crm-tier-filter">
+            <option value="">All tiers</option>
+            <option value="P0">P0</option>
+            <option value="P1">P1</option>
+            <option value="P2">P2</option>
+          </select>
+          <select id="crm-market-filter"><option value="">All markets</option></select>
+        </div>
+        <div class="table-wrap" id="crm-accounts-table">
+          <div class="empty">Loading operators…</div>
+        </div>
+        <p class="table-meta" id="crm-accounts-meta"></p>
+      </div>
+    </section>
+
+    <!-- Connect -->
+    <section class="panel" id="panel-connect">
+      <header class="page-header">
+        <h1>Connect</h1>
+        <p>Sign in with your GetLeads account and add an API key to unlock search and signals.</p>
+      </header>
+
+      <div id="connect-alert" class="hidden"></div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h2>Session login</h2>
+          <form id="login-form">
+            <div class="field">
+              <label for="email">Email</label>
+              <input id="email" type="email" autocomplete="username" placeholder="you@company.com" required />
+            </div>
+            <div class="field">
+              <label for="password">Password</label>
+              <input id="password" type="password" autocomplete="current-password" required />
+            </div>
+            <div class="row">
+              <button type="submit" class="btn btn-primary">Sign in</button>
+              <button type="button" class="btn btn-ghost" id="logout-btn">Sign out</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>API key</h2>
+          <p style="margin:0 0 1rem;font-size:0.88rem;color:var(--ink-muted)">
+            Required for contact search and funding signals. Create one in the app or here after login.
+          </p>
+          <form id="apikey-form">
+            <div class="field">
+              <label for="api-key">glb_live_… key</label>
+              <input id="api-key" type="password" placeholder="glb_live_xxxxxxxx" autocomplete="off" />
+            </div>
+            <div class="row">
+              <button type="submit" class="btn btn-primary">Save key</button>
+              <button type="button" class="btn btn-secondary" id="create-key-btn">Create new key</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Connection status</h2>
+        <div id="status-details" class="stats-grid"></div>
+      </div>
+    </section>
+
+    <!-- Search -->
+    <section class="panel" id="panel-search">
+      <header class="page-header">
+        <h1>Contact Search</h1>
+        <p>Find leads by job title, company, location, and more.</p>
+      </header>
+
+      <div id="search-alert" class="hidden"></div>
+
+      <div class="card">
+        <form id="search-form">
+          <div class="grid-2">
+            <div class="field">
+              <label for="job-title">Job title</label>
+              <input id="job-title" placeholder="CEO, Founder, VP Sales" value="CEO" />
+            </div>
+            <div class="field">
+              <label for="company">Company</label>
+              <input id="company" placeholder="Optional company name" />
+            </div>
+            <div class="field">
+              <label for="location">Location</label>
+              <input id="location" placeholder="San Francisco, US" />
+            </div>
+            <div class="field">
+              <label for="limit">Limit</label>
+              <input id="limit" type="number" min="1" max="100" value="10" />
+            </div>
+          </div>
+          <div class="row">
+            <button type="submit" class="btn btn-primary">Search contacts</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Results</h2>
+        <div id="search-results">
+          <div class="empty">Run a search to see contacts here.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Signals -->
+    <section class="panel" id="panel-signals">
+      <header class="page-header">
+        <h1>Funding Signals</h1>
+        <p>Recent funding rounds and acquisition signals from GetLeads.</p>
+      </header>
+
+      <div id="signals-alert" class="hidden"></div>
+
+      <div class="card">
+        <div class="row" style="margin-bottom:1rem">
+          <label for="signals-limit" style="margin:0">Limit</label>
+          <input id="signals-limit" type="number" min="1" max="50" value="20" style="width:80px" />
+          <button class="btn btn-primary" id="load-signals-btn">Load signals</button>
+        </div>
+        <div id="signals-results">
+          <div class="empty">Click load to fetch funding signals.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dashboard -->
+    <section class="panel" id="panel-dashboard">
+      <header class="page-header">
+        <h1>Dashboard</h1>
+        <p>Your GetLeads usage stats and recent enrichment runs.</p>
+      </header>
+
+      <div id="dashboard-alert" class="hidden"></div>
+
+      <div class="card">
+        <div class="row" style="margin-bottom:1rem">
+          <button class="btn btn-primary" id="load-dashboard-btn">Refresh dashboard</button>
+        </div>
+        <div id="dashboard-stats" class="stats-grid"></div>
+      </div>
+
+      <div class="card">
+        <h2>Recent runs</h2>
+        <div id="dashboard-runs">
+          <div class="empty">Refresh to load recent runs.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Keys -->
+    <section class="panel" id="panel-keys">
+      <header class="page-header">
+        <h1>API Keys</h1>
+        <p>Manage keys tied to your GetLeads account.</p>
+      </header>
+
+      <div id="keys-alert" class="hidden"></div>
+
+      <div class="card">
+        <div class="row" style="margin-bottom:1rem">
+          <button class="btn btn-primary" id="load-keys-btn">List keys</button>
+          <button class="btn btn-secondary" id="keys-create-btn">Create key</button>
+        </div>
+        <div id="keys-list">
+          <div class="empty">List keys to see them here.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <aside class="drawer hidden" id="account-drawer">
+    <div class="drawer-header">
+      <h2 id="drawer-title">Operator</h2>
+      <button class="btn btn-ghost" id="drawer-close" type="button">✕</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+  <div class="drawer-backdrop hidden" id="drawer-backdrop"></div>
+
+  <script src="/crm.js" type="module"></script>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
