@@ -4,9 +4,21 @@ function send(res, status, data) {
   res.status(status).json(data);
 }
 
+function routeFromRequest(req) {
+  if (req.url) {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    if (pathname.startsWith("/api/crm")) return pathname;
+  }
+  const segments = Array.isArray(req.query.path)
+    ? req.query.path
+    : req.query.path
+      ? [req.query.path]
+      : [];
+  return `/api/crm/${segments.join("/")}`;
+}
+
 export default async function handler(req, res) {
-  const segments = Array.isArray(req.query.path) ? req.query.path : [];
-  const route = `/api/crm/${segments.join("/")}`;
+  const route = routeFromRequest(req);
 
   try {
     if (route === "/api/crm/stats" && req.method === "GET") {
