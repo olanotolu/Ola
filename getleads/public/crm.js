@@ -12,7 +12,15 @@ function esc(s) {
 
 async function crmApi(path) {
   const res = await fetch(path);
-  return res.json();
+  const text = await res.text();
+  try {
+    const data = JSON.parse(text);
+    if (!res.ok && data.ok !== false) data.ok = false;
+    if (!res.ok && !data.message) data.message = `HTTP ${res.status}`;
+    return data;
+  } catch {
+    return { ok: false, message: text?.slice(0, 120) || `HTTP ${res.status}` };
+  }
 }
 
 async function crmApiPost(path, body) {
@@ -152,14 +160,15 @@ async function openAccountDrawer(id) {
   const drawer = $("#account-drawer");
   const backdrop = $("#drawer-backdrop");
   const body = $("#drawer-body");
-  $("#drawer-title").textContent = "Loading…";
-  body.innerHTML = `<div class="empty">Loading operator…</div>`;
+  $("#drawer-title").textContent = "Loading operator…";
+  body.innerHTML = `<div class="empty"><span class="spinner"></span> Loading operator details…</div>`;
   drawer.classList.remove("hidden");
   backdrop.classList.remove("hidden");
 
   const data = await crmApi(`/api/crm/accounts/${id}`);
   if (!data.ok) {
-    body.innerHTML = `<div class="empty">Could not load operator.</div>`;
+    $("#drawer-title").textContent = "Could not load";
+    body.innerHTML = `<div class="empty">${esc(data.message || "Operator not found.")}</div>`;
     return;
   }
 
