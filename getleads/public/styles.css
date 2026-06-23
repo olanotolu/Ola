@@ -732,3 +732,20 @@ tr.clickable { cursor: pointer; }
   border-radius: 8px;
 }
 
+.btn-sm {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.email-timeline-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.email-timeline-item .badge {
+  margin-left: 0.35rem;
+}
+

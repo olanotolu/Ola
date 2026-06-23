@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.8"
+    "@supabase/supabase-js": "^2.49.8",
+    "resend": "^4.5.1",
+    "svix": "^1.64.1"
   },
   "scripts": {
     "vercel:build": "rm -rf public/crm-static && mkdir -p public && cp -r getleads/public/* public/",
@@ -19,8 +21,11 @@
     "getleads:search": "getleads v1 contacts search --body @getleads/search.json --profile ola-leads-testing --json",
     "getleads:health": "getleads call GET /api/health --profile ola-leads-testing --json",
     "getleads:ui": "node getleads/server.mjs",
+    "getleads:doctor": "node getleads/doctor.mjs",
     "getleads:enrich": "node getleads/enrich-worker.mjs",
     "getleads:gojiberry": "node getleads/gojiberry-import.mjs",
-    "getleads:queue": "node getleads/export-connection-queue.mjs"
+    "getleads:queue": "node getleads/export-connection-queue.mjs",
+    "email:inbox:list": "himalaya envelope list --account concya --folder INBOX --page-size 20 --output json",
+    "email:sync": "node getleads/email-inbox-sync.mjs"
   }
 }

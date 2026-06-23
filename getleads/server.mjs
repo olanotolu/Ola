@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as gl from "./lib/client.mjs";
-import * as crm from "./lib/crm-api.mjs";
+import * as crm from "./lib/crm-api-async.mjs";
+import * as email from "./lib/email-api-async.mjs";
+import { useSupabaseHttp } from "./lib/supabase-client.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, "public");
@@ -27,9 +29,21 @@ function loadEnvFile() {
     const eq = trimmed.indexOf("=");
     if (eq < 1) continue;
     const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
     if (!process.env[key]) process.env[key] = value;
   }
+}
+
+function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
 }
 
 function readBody(req) {
@@ -171,15 +185,15 @@ async function handleApi(req, res) {
     }
 
     if (route === "/api/crm/stats" && req.method === "GET") {
-      return send(res, 200, { ok: true, ...crm.crmStats() });
+      return send(res, 200, { ok: true, ...(await crm.crmStats()) });
     }
 
     if (route === "/api/crm/markets" && req.method === "GET") {
-      return send(res, 200, { ok: true, markets: crm.crmMarkets() });
+      return send(res, 200, { ok: true, markets: await crm.crmMarkets() });
     }
 
     if (route === "/api/crm/accounts" && req.method === "GET") {
-      const data = crm.crmAccounts({
+      const data = await crm.crmAccounts({
         q: url.searchParams.get("q") || "",
         tier: url.searchParams.get("tier") || "",
         market: url.searchParams.get("market") || "",
@@ -190,7 +204,7 @@ async function handleApi(req, res) {
     }
 
     if (route === "/api/crm/contacts" && req.method === "GET") {
-      const data = crm.crmContacts({
+      const data = await crm.crmContacts({
         q: url.searchParams.get("q") || "",
         hasEmail: url.searchParams.get("has_email") || "",
         hasLinkedIn: url.searchParams.get("has_linkedin") || "",
@@ -202,7 +216,7 @@ async function handleApi(req, res) {
     }
 
     if (route === "/api/crm/pipeline" && req.method === "GET") {
-      const data = crm.crmPipelineBoard({
+      const data = await crm.crmPipelineBoard({
         q: url.searchParams.get("q") || "",
         tier: url.searchParams.get("tier") || "",
         market: url.searchParams.get("market") || "",
@@ -214,16 +228,57 @@ async function handleApi(req, res) {
     const stageMatch = route.match(/^\/api\/crm\/accounts\/([^/]+)\/stage$/);
     if (stageMatch && req.method === "PATCH") {
       const body = await readBody(req);
-      const updated = crm.crmUpdateAccountStage(stageMatch[1], body.stage);
+      const updated = await crm.crmUpdateAccountStage(stageMatch[1], body.stage);
       if (!updated) return send(res, 404, { ok: false, message: "Account not found" });
       return send(res, 200, { ok: true, account: updated });
     }
 
     const accountMatch = route.match(/^\/api\/crm\/accounts\/([^/]+)$/);
     if (accountMatch && req.method === "GET") {
-      const detail = crm.crmAccountDetail(accountMatch[1]);
+      const detail = await crm.crmAccountDetail(accountMatch[1]);
       if (!detail) return send(res, 404, { ok: false, message: "Account not found" });
       return send(res, 200, { ok: true, ...detail });
+    }
+
+    if (route === "/api/email/stats" && req.method === "GET") {
+      const stats = await email.getEmailStats();
+      return send(res, 200, { ok: true, ...stats });
+    }
+
+    if (route === "/api/email/contacts" && req.method === "GET") {
+      const contacts = await email.listOutreachContacts({ limit: url.searchParams.get("limit") || 100 });
+      return send(res, 200, { ok: true, contacts });
+    }
+
+    if (route === "/api/email/send" && req.method === "POST") {
+      const body = await readBody(req);
+      if (!body.contact_id || !body.subject || !body.body) {
+        return send(res, 400, { ok: false, message: "contact_id, subject, and body required" });
+      }
+      const result = await email.sendContactEmail({
+        contactId: body.contact_id,
+        subject: body.subject,
+        bodyText: body.body,
+        bodyHtml: body.html,
+        campaignId: body.campaign_id,
+      });
+      return send(res, 200, { ok: true, ...result });
+    }
+
+    if (route === "/api/email/webhook/resend" && req.method === "POST") {
+      const raw = await readRawBody(req);
+      const result = await email.handleResendWebhook(raw, {
+        "svix-id": req.headers["svix-id"],
+        "svix-timestamp": req.headers["svix-timestamp"],
+        "svix-signature": req.headers["svix-signature"],
+      });
+      return send(res, 200, result);
+    }
+
+    const emailContactMatch = route.match(/^\/api\/email\/contact\/([^/]+)$/);
+    if (emailContactMatch && req.method === "GET") {
+      const timeline = await email.getContactEmailTimeline(emailContactMatch[1]);
+      return send(res, 200, { ok: true, timeline });
     }
 
     res.writeHead(404);
@@ -245,5 +300,7 @@ server.listen(PORT, () => {
   console.log(`\n  Ola Leads + Concya CRM`);
   console.log(`  → http://localhost:${PORT}\n`);
   console.log(`  GetLeads profile: ${gl.PROFILE}`);
-  console.log(`  Concya CRM: live from Supabase\n`);
+  console.log(
+    `  Concya CRM: ${useSupabaseHttp() ? "Supabase HTTP (live)" : "missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY in getleads/.env.getleads"}\n`,
+  );
 });

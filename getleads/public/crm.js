@@ -15,6 +15,15 @@ async function crmApi(path) {
   return res.json();
 }
 
+async function crmApiPost(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
 async function crmApiPatch(path, body) {
   const res = await fetch(path, {
     method: "PATCH",
@@ -172,6 +181,10 @@ async function openAccountDrawer(id) {
       <h3>Contacts (${data.contacts.length})</h3>
       ${contactsTable(data.contacts)}
     </div>
+    <div class="drawer-section" id="drawer-email-section">
+      <h3>Email outreach</h3>
+      <div id="drawer-email-timeline"><p class="run-meta">Select a contact with email to see timeline.</p></div>
+    </div>
     ${data.properties.length ? `
     <div class="drawer-section">
       <h3>Properties (${data.properties.length}${data.properties.length >= 50 ? "+" : ""})</h3>
@@ -184,6 +197,12 @@ async function openAccountDrawer(id) {
   body.querySelectorAll("[data-account-id]").forEach((row) => {
     row.addEventListener("click", (e) => e.stopPropagation());
   });
+
+  const firstWithEmail = data.contacts.find((c) => c.email);
+  if (firstWithEmail) {
+    const tl = $("#drawer-email-timeline");
+    if (tl) loadContactEmailTimeline(firstWithEmail.id, tl);
+  }
 }
 
 function closeDrawer() {
@@ -368,6 +387,112 @@ async function loadPipeline() {
   if (data.ok) renderKanbanBoard(data);
 }
 
+function renderOutreachStats(data) {
+  const el = $("#crm-outreach-stats");
+  if (!el) return;
+  el.innerHTML = `
+    <div class="stat"><div class="stat-value">${esc(data.total_sends ?? 0)}</div><div class="stat-label">Sent</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.delivered ?? 0)}</div><div class="stat-label">Delivered</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.open_rate ?? 0)}%</div><div class="stat-label">Open rate</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.bounce_rate ?? 0)}%</div><div class="stat-label">Bounce rate</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.replied ?? 0)}</div><div class="stat-label">Replies</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.reply_rate ?? 0)}%</div><div class="stat-label">Reply rate</div></div>
+  `;
+}
+
+function outreachTable(rows) {
+  if (!rows?.length) return `<div class="empty">No contacts with email yet.</div>`;
+  return `
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Operator</th>
+          <th>Stage</th>
+          <th>Last send</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((c) => `
+          <tr data-contact-id="${esc(c.id)}">
+            <td><strong>${esc(c.name)}</strong></td>
+            <td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td>
+            <td>${esc(c.company)}</td>
+            <td><span class="badge badge-warn">${esc(c.stage || "—")}</span></td>
+            <td>${c.last_sent_at ? esc(fmtTime(c.last_sent_at)) : "—"} ${c.last_send_status ? `<span class="badge">${esc(c.last_send_status)}</span>` : ""}</td>
+            <td><button type="button" class="btn btn-ghost btn-sm outreach-send-btn" data-contact-id="${esc(c.id)}" data-contact-name="${esc(c.name)}" data-contact-email="${esc(c.email)}" data-company="${esc(c.company)}">Send</button></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+async function openSendModal(contact) {
+  const subject = `Quick intro — Concya × ${contact.company || "hospitality ops"}`;
+  const body = `Hi ${contact.name?.split(/\s+/)[0] || "there"},\n\nI'm building Concya (voice AI for restaurants/hospitality). Would love a quick chat about how you run ops at ${contact.company || "your property"}.\n\nBest,\nOla`;
+  const subj = prompt("Subject", subject);
+  if (subj === null) return;
+  const msg = prompt("Email body", body);
+  if (msg === null) return;
+  const result = await crmApiPost("/api/email/send", {
+    contact_id: contact.id,
+    subject: subj,
+    body: msg,
+  });
+  if (result.ok) {
+    alert(`Sent to ${contact.email}`);
+    loadOutreach();
+  } else {
+    alert(result.message || "Send failed — check RESEND_API_KEY in .env.getleads");
+  }
+}
+
+async function loadOutreach() {
+  const [stats, contactsRes] = await Promise.all([
+    crmApi("/api/email/stats"),
+    crmApi("/api/email/contacts?limit=150"),
+  ]);
+  if (stats.ok) renderOutreachStats(stats);
+  const el = $("#crm-outreach-table");
+  if (el && contactsRes.ok) {
+    el.innerHTML = outreachTable(contactsRes.contacts);
+    el.querySelectorAll(".outreach-send-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openSendModal({
+          id: btn.dataset.contactId,
+          name: btn.dataset.contactName,
+          email: btn.dataset.contactEmail,
+          company: btn.dataset.company,
+        });
+      });
+    });
+    $("#crm-outreach-meta").textContent = `${contactsRes.contacts?.length ?? 0} contacts with email`;
+  }
+}
+
+async function loadContactEmailTimeline(contactId, container) {
+  const data = await crmApi(`/api/email/contact/${contactId}`);
+  if (!data.ok || !data.timeline?.length) {
+    container.innerHTML = `<p class="run-meta">No emails sent yet.</p>`;
+    return;
+  }
+  container.innerHTML = data.timeline
+    .map(
+      (s) => `
+    <div class="email-timeline-item">
+      <strong>${esc(s.subject)}</strong>
+      <span class="badge">${esc(s.status)}</span>
+      <p class="run-meta">${fmtTime(s.sent_at || s.created_at)} → ${esc(s.to_email)}</p>
+      ${(s.crm_email_events || []).map((e) => `<span class="badge badge-ok">${esc(e.event_type)}</span> `).join("")}
+    </div>`,
+    )
+    .join("");
+}
+
 export async function refreshCrm() {
   const badge = $("#crm-live-badge");
   if (badge) badge.textContent = "↻ Refreshing…";
@@ -378,6 +503,9 @@ export async function refreshCrm() {
     await Promise.all([loadContacts(), loadAccounts()]);
     if ($("#crm-tab-pipeline")?.classList.contains("active")) {
       await loadPipeline();
+    }
+    if ($("#crm-tab-outreach")?.classList.contains("active")) {
+      await loadOutreach();
     }
     if (badge) {
       badge.textContent = `● Live · ${new Date().toLocaleTimeString()}`;
@@ -409,8 +537,11 @@ function initCrm() {
       tab.classList.add("active");
       $(`#crm-tab-${tab.dataset.crmTab}`).classList.add("active");
       if (tab.dataset.crmTab === "pipeline") loadPipeline();
+      if (tab.dataset.crmTab === "outreach") loadOutreach();
     });
   });
+
+  $("#crm-outreach-refresh")?.addEventListener("click", loadOutreach);
 
   $("#crm-refresh-btn")?.addEventListener("click", refreshCrm);
   $("#drawer-close")?.addEventListener("click", closeDrawer);

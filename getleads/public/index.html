@@ -52,6 +52,7 @@
         <button class="crm-tab active" data-crm-tab="contacts">Contacts</button>
         <button class="crm-tab" data-crm-tab="accounts">Operators</button>
         <button class="crm-tab" data-crm-tab="pipeline">Pipeline</button>
+        <button class="crm-tab" data-crm-tab="outreach">Outreach</button>
       </div>
 
       <div class="card crm-tab-panel active" id="crm-tab-contacts">
@@ -101,6 +102,17 @@
           <div class="empty">Loading pipeline…</div>
         </div>
         <p class="table-meta" id="crm-pipeline-meta"></p>
+      </div>
+
+      <div class="card crm-tab-panel" id="crm-tab-outreach">
+        <div id="crm-outreach-stats" class="stats-grid" style="margin-bottom:1rem"></div>
+        <div class="toolbar">
+          <button class="btn btn-secondary" id="crm-outreach-refresh" type="button">Refresh outreach</button>
+        </div>
+        <div class="table-wrap" id="crm-outreach-table">
+          <div class="empty">Loading outreach contacts…</div>
+        </div>
+        <p class="table-meta" id="crm-outreach-meta"></p>
       </div>
     </section>
 
