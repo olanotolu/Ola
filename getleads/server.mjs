@@ -201,6 +201,24 @@ async function handleApi(req, res) {
       return send(res, 200, { ok: true, ...data });
     }
 
+    if (route === "/api/crm/pipeline" && req.method === "GET") {
+      const data = crm.crmPipelineBoard({
+        q: url.searchParams.get("q") || "",
+        tier: url.searchParams.get("tier") || "",
+        market: url.searchParams.get("market") || "",
+        limit: url.searchParams.get("limit") || 600,
+      });
+      return send(res, 200, { ok: true, ...data });
+    }
+
+    const stageMatch = route.match(/^\/api\/crm\/accounts\/([^/]+)\/stage$/);
+    if (stageMatch && req.method === "PATCH") {
+      const body = await readBody(req);
+      const updated = crm.crmUpdateAccountStage(stageMatch[1], body.stage);
+      if (!updated) return send(res, 404, { ok: false, message: "Account not found" });
+      return send(res, 200, { ok: true, account: updated });
+    }
+
     const accountMatch = route.match(/^\/api\/crm\/accounts\/([^/]+)$/);
     if (accountMatch && req.method === "GET") {
       const detail = crm.crmAccountDetail(accountMatch[1]);

@@ -15,7 +15,18 @@ async function crmApi(path) {
   return res.json();
 }
 
+async function crmApiPatch(path, body) {
+  const res = await fetch(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
 let refreshTimer = null;
+let pipelineData = null;
+let dragAccountId = null;
 
 function fmtTime(iso) {
   if (!iso) return "—";
@@ -215,14 +226,146 @@ function bindRowClicks(container) {
 
 async function loadMarkets() {
   const data = await crmApi("/api/crm/markets");
-  const sel = $("#crm-market-filter");
-  if (!sel) return;
-  for (const m of data.markets || []) {
-    const opt = document.createElement("option");
-    opt.value = m.market_key;
-    opt.textContent = m.market_name;
-    sel.appendChild(opt);
+  for (const sel of ["#crm-market-filter", "#crm-pipeline-market"]) {
+    const el = $(sel);
+    if (!el) continue;
+    for (const m of data.markets || []) {
+      const opt = document.createElement("option");
+      opt.value = m.market_key;
+      opt.textContent = m.market_name;
+      el.appendChild(opt);
+    }
   }
+}
+
+function kanbanCard(account) {
+  return `
+    <article
+      class="kanban-card"
+      draggable="true"
+      data-account-id="${esc(account.id)}"
+      data-stage="${esc(account.stage)}"
+    >
+      <div class="kanban-card-top">
+        <strong>${esc(account.group_name)}</strong>
+        ${account.is_gojiberry ? '<span class="badge badge-ok">Gojiberry</span>' : ""}
+      </div>
+      <p class="kanban-card-meta">
+        <span class="badge badge-warn">${esc(account.tier)}</span>
+        ${esc(account.market_name || "")}
+      </p>
+      <p class="kanban-card-foot">
+        ${esc(account.email_count || 0)} emails · ${esc(account.contact_count || 0)} contacts
+      </p>
+    </article>
+  `;
+}
+
+function renderKanbanBoard(data) {
+  pipelineData = data;
+  const board = $("#crm-pipeline-board");
+  if (!board) return;
+
+  if (!data?.stages?.length) {
+    board.innerHTML = `<div class="empty">No pipeline data.</div>`;
+    return;
+  }
+
+  board.innerHTML = data.stages
+    .map(
+      (col) => `
+    <section class="kanban-column" data-stage="${esc(col.id)}">
+      <header class="kanban-column-header">
+        <h3>${esc(col.label)}</h3>
+        <span class="kanban-count">${esc(col.count)}</span>
+      </header>
+      <p class="kanban-column-hint">${esc(col.hint)}</p>
+      <div class="kanban-column-body" data-drop-stage="${esc(col.id)}">
+        ${(col.accounts || []).map(kanbanCard).join("") || `<div class="kanban-empty">Drop here</div>`}
+      </div>
+    </section>
+  `,
+    )
+    .join("");
+
+  bindKanbanDragDrop(board);
+  $("#crm-pipeline-meta").textContent = `${data.total ?? 0} operators on board · drag to move`;
+}
+
+function bindKanbanDragDrop(board) {
+  board.querySelectorAll(".kanban-card").forEach((card) => {
+    card.addEventListener("dragstart", (e) => {
+      dragAccountId = card.dataset.accountId;
+      card.classList.add("dragging");
+      e.dataTransfer?.setData("text/plain", dragAccountId);
+      e.dataTransfer.effectAllowed = "move";
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      dragAccountId = null;
+      board.querySelectorAll(".kanban-column-body").forEach((b) => b.classList.remove("drag-over"));
+    });
+    card.addEventListener("click", () => openAccountDrawer(card.dataset.accountId));
+  });
+
+  board.querySelectorAll(".kanban-column-body").forEach((body) => {
+    body.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      body.classList.add("drag-over");
+      e.dataTransfer.dropEffect = "move";
+    });
+    body.addEventListener("dragleave", () => body.classList.remove("drag-over"));
+    body.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      body.classList.remove("drag-over");
+      const accountId = e.dataTransfer?.getData("text/plain") || dragAccountId;
+      const newStage = body.dataset.dropStage;
+      if (!accountId || !newStage) return;
+
+      const card = board.querySelector(`[data-account-id="${accountId}"]`);
+      const oldStage = card?.dataset.stage;
+      if (!card || oldStage === newStage) return;
+
+      body.querySelector(".kanban-empty")?.remove();
+      body.prepend(card);
+      card.dataset.stage = newStage;
+
+      const fromBody = board.querySelector(`.kanban-column[data-stage="${oldStage}"] .kanban-column-body`);
+      if (fromBody && !fromBody.querySelector(".kanban-card")) {
+        fromBody.innerHTML = `<div class="kanban-empty">Drop here</div>`;
+      }
+      updateKanbanCounts(board);
+
+      const result = await crmApiPatch(`/api/crm/accounts/${accountId}/stage`, { stage: newStage });
+      if (!result.ok) {
+        await loadPipeline();
+        alert(result.message || "Could not update stage.");
+      }
+    });
+  });
+}
+
+function updateKanbanCounts(board) {
+  board.querySelectorAll(".kanban-column").forEach((col) => {
+    const stage = col.dataset.stage;
+    const count = col.querySelectorAll(".kanban-card").length;
+    const countEl = col.querySelector(".kanban-count");
+    if (countEl) countEl.textContent = String(count);
+    if (pipelineData?.stages) {
+      const bucket = pipelineData.stages.find((s) => s.id === stage);
+      if (bucket) bucket.count = count;
+    }
+  });
+}
+
+async function loadPipeline() {
+  const q = $("#crm-pipeline-search")?.value || "";
+  const tier = $("#crm-pipeline-tier")?.value || "";
+  const market = $("#crm-pipeline-market")?.value || "";
+  const data = await crmApi(
+    `/api/crm/pipeline?q=${encodeURIComponent(q)}&tier=${encodeURIComponent(tier)}&market=${encodeURIComponent(market)}&limit=600`,
+  );
+  if (data.ok) renderKanbanBoard(data);
 }
 
 export async function refreshCrm() {
@@ -233,6 +376,9 @@ export async function refreshCrm() {
     const stats = await crmApi("/api/crm/stats");
     renderStats(stats);
     await Promise.all([loadContacts(), loadAccounts()]);
+    if ($("#crm-tab-pipeline")?.classList.contains("active")) {
+      await loadPipeline();
+    }
     if (badge) {
       badge.textContent = `● Live · ${new Date().toLocaleTimeString()}`;
       badge.className = "badge badge-ok";
@@ -262,6 +408,7 @@ function initCrm() {
       $$(".crm-tab-panel").forEach((p) => p.classList.remove("active"));
       tab.classList.add("active");
       $(`#crm-tab-${tab.dataset.crmTab}`).classList.add("active");
+      if (tab.dataset.crmTab === "pipeline") loadPipeline();
     });
   });
 
@@ -284,6 +431,15 @@ function initCrm() {
   });
   $("#crm-tier-filter")?.addEventListener("change", loadAccounts);
   $("#crm-market-filter")?.addEventListener("change", loadAccounts);
+
+  $("#crm-pipeline-refresh")?.addEventListener("click", loadPipeline);
+  let pipelineDebounce;
+  $("#crm-pipeline-search")?.addEventListener("input", () => {
+    clearTimeout(pipelineDebounce);
+    pipelineDebounce = setTimeout(loadPipeline, 350);
+  });
+  $("#crm-pipeline-tier")?.addEventListener("change", loadPipeline);
+  $("#crm-pipeline-market")?.addEventListener("change", loadPipeline);
 
   loadMarkets();
   startCrmAutoRefresh();

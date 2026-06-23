@@ -605,3 +605,130 @@ tr.clickable { cursor: pointer; }
 
 .badge-err { background: var(--red-soft); color: var(--red); }
 
+.pipeline-hint {
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+}
+
+.kanban-board {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  min-height: 420px;
+  align-items: flex-start;
+}
+
+.kanban-column {
+  flex: 0 0 260px;
+  max-width: 260px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  max-height: min(70vh, 760px);
+}
+
+.kanban-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.85rem 0.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.kanban-column-header h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.kanban-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--ink);
+  color: #f0ebe3;
+  min-width: 1.5rem;
+  text-align: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+
+.kanban-column-hint {
+  margin: 0;
+  padding: 0.35rem 0.85rem 0.55rem;
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--line);
+}
+
+.kanban-column-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 120px;
+}
+
+.kanban-column-body.drag-over {
+  background: var(--accent-soft);
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+
+.kanban-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.65rem 0.7rem;
+  cursor: grab;
+  box-shadow: var(--shadow);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.kanban-card:hover {
+  border-color: var(--accent);
+}
+
+.kanban-card.dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+.kanban-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.kanban-card-meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.kanban-card-foot {
+  margin: 0.4rem 0 0;
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+.kanban-empty {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  text-align: center;
+  padding: 1.25rem 0.5rem;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}
+

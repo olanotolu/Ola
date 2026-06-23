@@ -20,6 +20,7 @@
     "getleads:health": "getleads call GET /api/health --profile ola-leads-testing --json",
     "getleads:ui": "node getleads/server.mjs",
     "getleads:enrich": "node getleads/enrich-worker.mjs",
-    "getleads:gojiberry": "node getleads/gojiberry-import.mjs"
+    "getleads:gojiberry": "node getleads/gojiberry-import.mjs",
+    "getleads:queue": "node getleads/export-connection-queue.mjs"
   }
 }

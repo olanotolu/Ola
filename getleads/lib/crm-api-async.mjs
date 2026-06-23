@@ -1,4 +1,5 @@
 import { getSupabase } from "./supabase-client.mjs";
+import { PIPELINE_STAGES, normalizePipelineStage } from "./pipeline-stages.mjs";
 
 const cache = new Map();
 
@@ -228,4 +229,77 @@ export async function crmMarkets() {
       return true;
     });
   });
+}
+
+export async function crmPipelineBoard({ q, tier, market, limit = 600 }) {
+  const key = `pipeline:${q}:${tier}:${market}:${limit}`;
+  return cached(key, async () => {
+    const sb = getSupabase();
+    const lim = Number(limit) || 600;
+
+    let query = sb
+      .from("crm_accounts")
+      .select(
+        "id, group_name, market_name, market_key, tier, mix, stage, property_count_nyc, property_count_total, org_domain, discovery_vector, crm_contacts(count), email_contacts:crm_contacts(count)",
+      )
+      .order("group_name", { ascending: true })
+      .limit(lim);
+
+    if (q?.trim()) query = query.ilike("group_name", `%${q.trim()}%`);
+    if (tier) query = query.eq("tier", tier);
+    if (market) query = query.eq("market_key", market);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const buckets = Object.fromEntries(PIPELINE_STAGES.map((s) => [s.id, []]));
+
+    for (const row of data ?? []) {
+      const stage = normalizePipelineStage(row.stage);
+      buckets[stage].push({
+        id: row.id,
+        group_name: row.group_name,
+        market_name: row.market_name,
+        market_key: row.market_key,
+        tier: row.tier,
+        mix: row.mix,
+        stage,
+        property_count_nyc: row.property_count_nyc,
+        property_count_total: row.property_count_total,
+        org_domain: row.org_domain,
+        discovery_vector: row.discovery_vector,
+        contact_count: row.crm_contacts?.[0]?.count ?? 0,
+        email_count: row.email_contacts?.[0]?.count ?? 0,
+        is_gojiberry: row.discovery_vector === "gojiberry",
+      });
+    }
+
+    const stages = PIPELINE_STAGES.map((s) => ({
+      ...s,
+      count: buckets[s.id].length,
+      accounts: buckets[s.id],
+    }));
+
+    return {
+      stages,
+      total: (data ?? []).length,
+      stage_definitions: PIPELINE_STAGES,
+    };
+  }, 8000);
+}
+
+export async function crmUpdateAccountStage(id, stage) {
+  const normalized = normalizePipelineStage(stage);
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("crm_accounts")
+    .update({ stage: normalized, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("id, group_name, stage")
+    .maybeSingle();
+
+    if (error) throw error;
+  if (!data) return null;
+  cache.clear();
+  return data;
 }

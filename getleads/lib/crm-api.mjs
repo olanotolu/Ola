@@ -1,4 +1,5 @@
-import { dbQuery, escSql } from "./supabase-cli.mjs";
+import { dbQuery, escSql, dbExec } from "./supabase-cli.mjs";
+import { PIPELINE_STAGES, normalizePipelineStage } from "./pipeline-stages.mjs";
 
 const cache = new Map();
 
@@ -125,4 +126,56 @@ export function crmMarkets() {
   return cached("markets", () =>
     dbQuery(`SELECT DISTINCT market_key, market_name FROM crm_accounts ORDER BY market_name;`),
   );
+}
+
+export function crmPipelineBoard({ q, tier, market, limit = 600 }) {
+  const key = `pipeline:${q}:${tier}:${market}:${limit}`;
+  return cached(key, () => {
+    let where = "WHERE 1=1";
+    where += likeFilter("group_name", q);
+    if (tier) where += ` AND tier = ${escSql(tier)} `;
+    if (market) where += ` AND market_key = ${escSql(market)} `;
+    const lim = Number(limit) || 600;
+    const rows = dbQuery(`
+      SELECT id, group_name, market_name, market_key, tier, mix, stage,
+        property_count_nyc, property_count_total, org_domain, discovery_vector,
+        (SELECT COUNT(*)::int FROM crm_contacts c WHERE c.account_id = crm_accounts.id) AS contact_count,
+        (SELECT COUNT(*)::int FROM crm_contacts c WHERE c.account_id = crm_accounts.id AND c.email IS NOT NULL) AS email_count
+      FROM crm_accounts
+      ${where}
+      ORDER BY group_name
+      LIMIT ${lim};
+    `);
+
+    const buckets = Object.fromEntries(PIPELINE_STAGES.map((s) => [s.id, []]));
+    for (const row of rows) {
+      const stage = normalizePipelineStage(row.stage);
+      buckets[stage].push({
+        ...row,
+        stage,
+        is_gojiberry: row.discovery_vector === "gojiberry",
+      });
+    }
+
+    return {
+      stages: PIPELINE_STAGES.map((s) => ({
+        ...s,
+        count: buckets[s.id].length,
+        accounts: buckets[s.id],
+      })),
+      total: rows.length,
+      stage_definitions: PIPELINE_STAGES,
+    };
+  }, 8000);
+}
+
+export function crmUpdateAccountStage(id, stage) {
+  const normalized = normalizePipelineStage(stage);
+  const updated = dbQuery(`
+    UPDATE crm_accounts SET stage = ${escSql(normalized)}, updated_at = now()
+    WHERE id = ${escSql(id)}::uuid
+    RETURNING id, group_name, stage;
+  `);
+  cache.clear();
+  return updated[0] || null;
 }

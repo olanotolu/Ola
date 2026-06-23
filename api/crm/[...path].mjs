@@ -17,6 +17,31 @@ function routeFromRequest(req) {
   return `/api/crm/${segments.join("/")}`;
 }
 
+async function readJsonBody(req) {
+  if (req.body && typeof req.body === "object") return req.body;
+  if (typeof req.body === "string" && req.body) {
+    try {
+      return JSON.parse(req.body);
+    } catch {
+      return {};
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        reject(new Error("Invalid JSON body"));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
 export default async function handler(req, res) {
   const route = routeFromRequest(req);
 
@@ -52,6 +77,24 @@ export default async function handler(req, res) {
         offset: req.query.offset || 0,
       });
       return send(res, 200, { ok: true, ...data });
+    }
+
+    if (route === "/api/crm/pipeline" && req.method === "GET") {
+      const data = await crm.crmPipelineBoard({
+        q: req.query.q || "",
+        tier: req.query.tier || "",
+        market: req.query.market || "",
+        limit: req.query.limit || 600,
+      });
+      return send(res, 200, { ok: true, ...data });
+    }
+
+    const stageMatch = route.match(/^\/api\/crm\/accounts\/([^/]+)\/stage$/);
+    if (stageMatch && req.method === "PATCH") {
+      const body = await readJsonBody(req);
+      const updated = await crm.crmUpdateAccountStage(stageMatch[1], body.stage);
+      if (!updated) return send(res, 404, { ok: false, message: "Account not found" });
+      return send(res, 200, { ok: true, account: updated });
     }
 
     const accountMatch = route.match(/^\/api\/crm\/accounts\/([^/]+)$/);
