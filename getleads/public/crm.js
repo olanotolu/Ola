@@ -42,8 +42,9 @@ async function crmApiPatch(path, body) {
 }
 
 let refreshTimer = null;
-let pipelineData = null;
-let dragAccountId = null;
+let sequencesData = null;
+let dragEnrollmentId = null;
+let dragContactId = null;
 
 function fmtTime(iso) {
   if (!iso) return "—";
@@ -67,7 +68,8 @@ function renderStats(data) {
     <div class="stat"><div class="stat-value">${esc(data.contacts_with_email)}</div><div class="stat-label">With email</div></div>
     <div class="stat"><div class="stat-value">${esc(data.contacts_with_linkedin)}</div><div class="stat-label">With LinkedIn</div></div>
     <div class="stat"><div class="stat-value">${esc(data.gojiberry_contacts ?? 0)}</div><div class="stat-label">Gojiberry</div></div>
-    <div class="stat"><div class="stat-value">${esc(data.contacts_with_phone)}</div><div class="stat-label">With phone</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.companies_total ?? 0)}</div><div class="stat-label">Companies</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.companies_with_email ?? 0)}</div><div class="stat-label">Co. w/ email</div></div>
     <div class="stat"><div class="stat-value">${esc(data.accounts_enriched)}/${esc(data.accounts_total)}</div><div class="stat-label">Operators enriched</div></div>
     <div class="stat"><div class="stat-value">${esc(data.properties_total)}</div><div class="stat-label">Properties</div></div>
     <div class="stat"><div class="stat-value">${run?.credits_remaining ?? "—"}</div><div class="stat-label">Credits left</div></div>
@@ -247,8 +249,137 @@ async function loadAccounts() {
 }
 
 function bindRowClicks(container) {
-  container.querySelectorAll("tr.clickable").forEach((row) => {
+  container.querySelectorAll("tr.clickable[data-account-id]").forEach((row) => {
     row.addEventListener("click", () => openAccountDrawer(row.dataset.accountId));
+  });
+  container.querySelectorAll("tr.clickable[data-company-id]").forEach((row) => {
+    row.addEventListener("click", () => openCompanyDrawer(row.dataset.companyId));
+  });
+}
+
+function companiesTable(rows) {
+  if (!rows.length) return `<div class="empty">No companies match your filters.</div>`;
+  return `
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Location</th>
+          <th>Industry</th>
+          <th>Size</th>
+          <th>Employees</th>
+          <th>Hiring</th>
+          <th>Email</th>
+          <th>Domain</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((c) => `
+          <tr class="clickable" data-company-id="${esc(c.id)}">
+            <td><strong>${esc(c.name)}</strong></td>
+            <td>${esc([c.geo_city, c.geo_state].filter(Boolean).join(", ") || "—")}</td>
+            <td>${esc(c.industry || "—")}</td>
+            <td>${esc(c.company_size || "—")}</td>
+            <td>${esc(c.employee_count_us ?? "—")}</td>
+            <td>${c.hiring ? '<span class="badge badge-ok">Yes</span>' : "—"}</td>
+            <td>${c.primary_email ? `<a href="mailto:${esc(c.primary_email)}">${esc(c.primary_email)}</a>` : "—"}</td>
+            <td>${c.company_domain ? `<a href="https://${esc(c.company_domain)}" target="_blank" rel="noopener">${esc(c.company_domain)}</a>` : "—"}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadCompanyStates() {
+  const data = await crmApi("/api/crm/company-states");
+  const el = $("#crm-company-state");
+  if (!el || el.dataset.loaded) return;
+  for (const s of data.states || []) {
+    const opt = document.createElement("option");
+    opt.value = s;
+    opt.textContent = s;
+    el.appendChild(opt);
+  }
+  el.dataset.loaded = "1";
+}
+
+async function loadCompanies() {
+  const q = $("#crm-company-search")?.value || "";
+  const state = $("#crm-company-state")?.value || "";
+  const industry = $("#crm-company-industry")?.value || "";
+  const hiring = $("#crm-company-hiring")?.checked ? "1" : "";
+  const hasEmail = $("#crm-company-email")?.checked ? "1" : "";
+  const params = new URLSearchParams({ q, state, industry, hiring, has_email: hasEmail, limit: "250" });
+  const data = await crmApi(`/api/crm/companies?${params}`);
+  const el = $("#crm-companies-table");
+  el.innerHTML = companiesTable(data.rows || []);
+  $("#crm-companies-meta").textContent = `Showing ${(data.rows || []).length} of ${data.total ?? 0} companies (Explee)`;
+  bindRowClicks(el);
+}
+
+async function openCompanyDrawer(id) {
+  const drawer = $("#account-drawer");
+  const backdrop = $("#drawer-backdrop");
+  const body = $("#drawer-body");
+  $("#drawer-title").textContent = "Loading company…";
+  body.innerHTML = `<div class="empty"><span class="spinner"></span> Loading…</div>`;
+  drawer.classList.remove("hidden");
+  backdrop.classList.remove("hidden");
+
+  const data = await crmApi(`/api/crm/companies/${id}`);
+  if (!data.ok || !data.company) {
+    $("#drawer-title").textContent = "Could not load";
+    body.innerHTML = `<div class="empty">${esc(data.message || "Company not found.")}</div>`;
+    return;
+  }
+
+  const c = data.company;
+  const sp = c.source_payload || {};
+  const emails = (c.all_emails || []).filter(Boolean);
+  const socials = [
+    c.linkedin_url && { label: "LinkedIn", url: c.linkedin_url },
+    sp.facebook && { label: "Facebook", url: sp.facebook.split(";")[0].trim() },
+    sp.instagram && { label: "Instagram", url: sp.instagram.split(";")[0].trim() },
+    sp.youtube && { label: "YouTube", url: sp.youtube.split(";")[0].trim() },
+  ].filter((s) => s?.url);
+
+  $("#drawer-title").textContent = c.name;
+  body.innerHTML = `
+    <div class="drawer-section">
+      <p class="drawer-kicker">${esc([c.geo_city, c.geo_state, c.geo_country].filter(Boolean).join(", "))} · ${esc(c.industry || "Hospitality")}</p>
+      <p>${esc(c.description || "")}</p>
+      <div class="drawer-facts">
+        <span>Domain: <strong>${esc(c.company_domain || "—")}</strong></span>
+        <span>Website: ${c.website ? `<a href="${esc(c.website)}" target="_blank" rel="noopener">${esc(c.website)}</a>` : "—"}</span>
+        <span>Size: ${esc(c.company_size || "—")}</span>
+        <span>Employees (US): ${esc(c.employee_count_us ?? "—")}</span>
+        <span>Hiring: ${c.hiring ? "Yes" : "No"}</span>
+        <span>Traffic: ${esc(c.traffic || "—")}${c.traffic_growth ? ` (${esc(c.traffic_growth)})` : ""}</span>
+      </div>
+    </div>
+    ${emails.length ? `
+    <div class="drawer-section">
+      <h3>Emails (${emails.length})</h3>
+      <ul>${emails.map((e) => `<li><a href="mailto:${esc(e)}">${esc(e)}</a></li>`).join("")}</ul>
+    </div>` : ""}
+    ${socials.length ? `
+    <div class="drawer-section">
+      <h3>Social</h3>
+      <ul>${socials.map((s) => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}</a></li>`).join("")}</ul>
+    </div>` : ""}
+    ${sp.primary_nace_description ? `
+    <div class="drawer-section">
+      <h3>Classification</h3>
+      <p>${esc(sp.primary_nace_code || "")} — ${esc(sp.primary_nace_description)}</p>
+    </div>` : ""}
+    <div class="drawer-section">
+      <button class="btn btn-secondary" type="button" id="copy-company-domain">Copy domain for Roger</button>
+    </div>
+  `;
+
+  $("#copy-company-domain")?.addEventListener("click", () => {
+    navigator.clipboard?.writeText(c.company_domain || "");
   });
 }
 
@@ -396,110 +527,310 @@ async function loadPipeline() {
   if (data.ok) renderKanbanBoard(data);
 }
 
-function renderOutreachStats(data) {
-  const el = $("#crm-outreach-stats");
+function renderSequencesStats(data) {
+  const el = $("#crm-sequences-stats");
   if (!el) return;
   el.innerHTML = `
-    <div class="stat"><div class="stat-value">${esc(data.total_sends ?? 0)}</div><div class="stat-label">Sent</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.enrolled ?? 0)}</div><div class="stat-label">Enrolled</div></div>
     <div class="stat"><div class="stat-value">${esc(data.delivered ?? 0)}</div><div class="stat-label">Delivered</div></div>
-    <div class="stat"><div class="stat-value">${esc(data.open_rate ?? 0)}%</div><div class="stat-label">Open rate</div></div>
-    <div class="stat"><div class="stat-value">${esc(data.bounce_rate ?? 0)}%</div><div class="stat-label">Bounce rate</div></div>
+    <div class="stat stat-ok"><div class="stat-value">${esc(data.delivery_rate ?? 0)}%</div><div class="stat-label">Delivery rate</div></div>
+    <div class="stat ${(data.failed ?? 0) > 0 ? "stat-warn" : ""}"><div class="stat-value">${esc(data.failed ?? 0)}</div><div class="stat-label">Failed</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.queue_pending ?? 0)}</div><div class="stat-label">Retry queue</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.opened_confirmed ?? 0)}</div><div class="stat-label">Opens (confirmed)</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.opened_suspect ?? 0)}</div><div class="stat-label">Opens (suspect)</div></div>
     <div class="stat"><div class="stat-value">${esc(data.replied ?? 0)}</div><div class="stat-label">Replies</div></div>
+    <div class="stat"><div class="stat-value">${esc(data.auto_replied ?? 0)}</div><div class="stat-label">Auto-replies</div></div>
     <div class="stat"><div class="stat-value">${esc(data.reply_rate ?? 0)}%</div><div class="stat-label">Reply rate</div></div>
   `;
 }
 
-function outreachTable(rows) {
-  if (!rows?.length) return `<div class="empty">No contacts with email yet.</div>`;
+function sequenceStatusBadges(card) {
+  const bits = [];
+  if (card.current_step > 0) bits.push(`<span class="badge">Touch ${card.current_step}/5</span>`);
+  if (card.has_failed) bits.push(`<span class="badge badge-err">send failed</span>`);
+  if (card.failure_reason === "rate_limit") bits.push('<span class="badge badge-warn">rate limited</span>');
+  if (card.has_opened) bits.push('<span class="badge badge-ok">opened</span>');
+  if (card.has_open_suspect && !card.has_opened) bits.push('<span class="badge">open?</span>');
+  if (card.has_replied) bits.push('<span class="badge badge-ok">replied</span>');
+  if (card.has_auto_reply) bits.push('<span class="badge">OOO</span>');
+  if (card.has_bounced) bits.push('<span class="badge badge-err">bounced</span>');
+  if (card.intent_type) bits.push(`<span class="badge badge-warn">${esc(card.intent_type)}</span>`);
+  return bits.join(" ");
+}
+
+function sequenceCard(card) {
+  const nextStep = Math.min((card.current_step || 0) + 1, 5);
+  const enrolled = Boolean(card.enrollment_id);
   return `
-    <table class="results-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Email</th>
-          <th>Operator</th>
-          <th>Stage</th>
-          <th>Last send</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows.map((c) => `
-          <tr data-contact-id="${esc(c.id)}">
-            <td><strong>${esc(c.name)}</strong></td>
-            <td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td>
-            <td>${esc(c.company)}</td>
-            <td><span class="badge badge-warn">${esc(c.stage || "—")}</span></td>
-            <td>${c.last_sent_at ? esc(fmtTime(c.last_sent_at)) : "—"} ${c.last_send_status ? `<span class="badge">${esc(c.last_send_status)}</span>` : ""}</td>
-            <td><button type="button" class="btn btn-ghost btn-sm outreach-send-btn" data-contact-id="${esc(c.id)}" data-contact-name="${esc(c.name)}" data-contact-email="${esc(c.email)}" data-company="${esc(c.company)}">Send</button></td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
+    <article
+      class="kanban-card sequence-card"
+      draggable="true"
+      data-contact-id="${esc(card.contact_id)}"
+      data-enrollment-id="${esc(card.enrollment_id || "")}"
+      data-column="${esc(card.column)}"
+    >
+      <div class="kanban-card-top">
+        <strong>${esc(card.name)}</strong>
+        ${card.gojiberry_score ? `<span class="badge">${esc(card.gojiberry_score)}</span>` : ""}
+      </div>
+      <p class="kanban-card-meta">
+        <span class="badge badge-warn">${esc(card.tier || "—")}</span>
+        ${esc(card.company || "")}
+      </p>
+      <p class="kanban-card-foot">${esc(card.email)}</p>
+      <p class="sequence-badges">${sequenceStatusBadges(card)}</p>
+      <div class="sequence-actions">
+        ${!enrolled ? `<button type="button" class="btn btn-ghost btn-sm seq-enroll-btn" data-contact-id="${esc(card.contact_id)}">Enroll</button>` : ""}
+        <button type="button" class="btn btn-ghost btn-sm seq-preview-btn" data-contact-id="${esc(card.contact_id)}" data-step="${nextStep}">Preview ${nextStep}</button>
+        <button type="button" class="btn btn-primary btn-sm seq-send-btn" data-contact-id="${esc(card.contact_id)}" data-step="${nextStep}">Send ${nextStep}</button>
+      </div>
+    </article>
   `;
 }
 
-async function openSendModal(contact) {
-  const subject = `Quick intro — Concya × ${contact.company || "hospitality ops"}`;
-  const body = `Hi ${contact.name?.split(/\s+/)[0] || "there"},\n\nI'm building Concya (voice AI for restaurants/hospitality). Would love a quick chat about how you run ops at ${contact.company || "your property"}.\n\nBest,\nOla`;
-  const subj = prompt("Subject", subject);
-  if (subj === null) return;
-  const msg = prompt("Email body", body);
-  if (msg === null) return;
-  const result = await crmApiPost("/api/email/send", {
-    contact_id: contact.id,
-    subject: subj,
-    body: msg,
-  });
-  if (result.ok) {
-    alert(`Sent to ${contact.email}`);
-    loadOutreach();
-  } else {
-    alert(result.message || "Send failed — check RESEND_API_KEY in .env.getleads");
+function renderSequencesBoard(data) {
+  sequencesData = data;
+  const board = $("#crm-sequences-board");
+  if (!board) return;
+  if (!data?.columns?.length) {
+    board.innerHTML = `<div class="empty">No sequence data.</div>`;
+    return;
   }
+
+  board.innerHTML = data.columns
+    .map(
+      (col) => `
+    <section class="kanban-column" data-column="${esc(col.id)}">
+      <header class="kanban-column-header">
+        <h3>${esc(col.label)}</h3>
+        <span class="kanban-count">${esc(col.count)}</span>
+      </header>
+      <p class="kanban-column-hint">${esc(col.hint)}</p>
+      <div class="kanban-column-body" data-drop-column="${esc(col.id)}">
+        ${(col.cards || []).map(sequenceCard).join("") || `<div class="kanban-empty">Drop here</div>`}
+      </div>
+    </section>`,
+    )
+    .join("");
+
+  bindSequencesDragDrop(board);
+  bindSequenceActions(board);
+  $("#crm-sequences-meta").textContent = `${data.total ?? 0} contacts · 5-touch sequence`;
 }
 
-async function loadOutreach() {
-  const [stats, contactsRes] = await Promise.all([
-    crmApi("/api/email/stats"),
-    crmApi("/api/email/contacts?limit=150"),
-  ]);
-  if (stats.ok) renderOutreachStats(stats);
-  const el = $("#crm-outreach-table");
-  if (el && contactsRes.ok) {
-    el.innerHTML = outreachTable(contactsRes.contacts);
-    el.querySelectorAll(".outreach-send-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openSendModal({
-          id: btn.dataset.contactId,
-          name: btn.dataset.contactName,
-          email: btn.dataset.contactEmail,
-          company: btn.dataset.company,
-        });
-      });
+function bindSequenceActions(board) {
+  board.querySelectorAll(".seq-enroll-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const result = await crmApiPost("/api/email/enroll", { contact_id: btn.dataset.contactId });
+      if (result.ok) loadSequences();
+      else alert(result.message || "Enroll failed");
     });
-    $("#crm-outreach-meta").textContent = `${contactsRes.contacts?.length ?? 0} contacts with email`;
-  }
+  });
+  board.querySelectorAll(".seq-preview-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const result = await crmApiPost("/api/email/send-step", {
+        contact_id: btn.dataset.contactId,
+        step: Number(btn.dataset.step),
+        preview_only: true,
+      });
+      if (!result.ok) return alert(result.message || "Preview failed");
+      alert(`Subject: ${result.subject}\n\n---\n\n${result.body}`);
+    });
+  });
+  board.querySelectorAll(".seq-send-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const step = Number(btn.dataset.step);
+      const preview = await crmApiPost("/api/email/send-step", {
+        contact_id: btn.dataset.contactId,
+        step,
+        preview_only: true,
+      });
+      if (!preview.ok) return alert(preview.message || "Preview failed");
+      if (!confirm(`Send touch ${step}?\n\nSubject: ${preview.subject}`)) return;
+      const result = await crmApiPost("/api/email/send-step", {
+        contact_id: btn.dataset.contactId,
+        step,
+      });
+      if (result.ok) {
+        alert(`Sent touch ${step}`);
+        loadSequences();
+      } else {
+        alert(result.message || "Send failed — check SMTP_* in .env.getleads");
+      }
+    });
+  });
 }
 
-async function loadContactEmailTimeline(contactId, container) {
-  const data = await crmApi(`/api/email/contact/${contactId}`);
+function bindSequencesDragDrop(board) {
+  board.querySelectorAll(".sequence-card").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      openContactDrawer(card.dataset.contactId);
+    });
+    card.addEventListener("dragstart", (e) => {
+      dragEnrollmentId = card.dataset.enrollmentId || null;
+      dragContactId = card.dataset.contactId;
+      card.classList.add("dragging");
+      e.dataTransfer?.setData("text/plain", JSON.stringify({
+        enrollmentId: dragEnrollmentId,
+        contactId: dragContactId,
+      }));
+      e.dataTransfer.effectAllowed = "move";
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      dragEnrollmentId = null;
+      dragContactId = null;
+      board.querySelectorAll(".kanban-column-body").forEach((b) => b.classList.remove("drag-over"));
+    });
+  });
+
+  board.querySelectorAll(".kanban-column-body").forEach((body) => {
+    body.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      body.classList.add("drag-over");
+      e.dataTransfer.dropEffect = "move";
+    });
+    body.addEventListener("dragleave", () => body.classList.remove("drag-over"));
+    body.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      body.classList.remove("drag-over");
+      let payload = {};
+      try {
+        payload = JSON.parse(e.dataTransfer?.getData("text/plain") || "{}");
+      } catch {
+        payload = { contactId: dragContactId, enrollmentId: dragEnrollmentId };
+      }
+      const newColumn = body.dataset.dropColumn;
+      if (!newColumn || !payload.contactId) return;
+
+      if (newColumn === "queue") {
+        if (payload.enrollmentId) {
+          await crmApiPatch(`/api/email/enrollments/${payload.enrollmentId}`, { outreach_status: "paused" });
+        }
+        return loadSequences();
+      }
+
+      if (!payload.enrollmentId) {
+        await crmApiPost("/api/email/enroll", { contact_id: payload.contactId });
+        const boardData = await crmApi("/api/email/sequences/board");
+        const card = boardData.columns?.flatMap((c) => c.cards || []).find((c) => c.contact_id === payload.contactId);
+        if (card?.enrollment_id && newColumn !== "active") {
+          await crmApiPatch(`/api/email/enrollments/${card.enrollment_id}`, { outreach_status: newColumn });
+        }
+        return loadSequences();
+      }
+
+      if (newColumn !== "active") {
+        const result = await crmApiPatch(`/api/email/enrollments/${payload.enrollmentId}`, {
+          outreach_status: newColumn,
+        });
+        if (!result.ok) alert(result.message || "Could not update status");
+      }
+      loadSequences();
+    });
+  });
+}
+
+async function loadSequences() {
+  const tier = $("#crm-sequences-tier")?.value || "";
+  const intent = $("#crm-sequences-intent")?.value || "";
+  const due = $("#crm-sequences-due")?.checked ? "1" : "";
+  const [stats, board] = await Promise.all([
+    crmApi("/api/email/stats"),
+    crmApi(`/api/email/sequences/board?tier=${encodeURIComponent(tier)}&intent=${encodeURIComponent(intent)}&due=${due}`),
+  ]);
+  if (stats.ok) renderSequencesStats(stats);
+  if (board.ok) renderSequencesBoard(board);
+}
+
+async function openContactDrawer(contactId) {
+  const drawer = $("#account-drawer");
+  const backdrop = $("#drawer-backdrop");
+  const body = $("#drawer-body");
+  const card = sequencesData?.columns?.flatMap((c) => c.cards || []).find((c) => c.contact_id === contactId);
+
+  $("#drawer-title").textContent = card?.name || "Contact";
+  body.innerHTML = `<div class="empty"><span class="spinner"></span> Loading…</div>`;
+  drawer.classList.remove("hidden");
+  backdrop.classList.remove("hidden");
+
+  const timelineRes = await crmApi(`/api/email/contact/${contactId}`);
+  const enrollment = timelineRes.enrollment;
+
+  body.innerHTML = `
+    <div class="drawer-section">
+      <p class="drawer-kicker">${esc(card?.title || "")} · ${esc(card?.company || "")}</p>
+      <p>${card?.email ? `<a href="mailto:${esc(card.email)}">${esc(card.email)}</a>` : ""}</p>
+      ${enrollment ? `<p class="run-meta">Touch ${enrollment.current_step}/5 · ${esc(enrollment.outreach_status)}</p>` : ""}
+      ${card?.intent_raw ? `<p class="run-meta">${esc(card.intent_raw)}</p>` : ""}
+    </div>
+    <div class="drawer-section">
+      <h3>Signal brief</h3>
+      <textarea id="drawer-signal-brief" class="signal-brief-input" rows="10" placeholder="Paste research / signal notes for touch 1…">${esc(enrollment?.signal_brief || card?.signal_brief || "")}</textarea>
+      <div class="row" style="margin-top:0.5rem">
+        <button type="button" class="btn btn-secondary btn-sm" id="drawer-save-signal">Save signal</button>
+        ${!enrollment ? `<button type="button" class="btn btn-primary btn-sm" id="drawer-enroll">Enroll in sequence</button>` : ""}
+      </div>
+    </div>
+    <div class="drawer-section" id="drawer-email-section">
+      <h3>Email timeline</h3>
+      <div id="drawer-email-timeline"></div>
+    </div>
+  `;
+
+  const tl = $("#drawer-email-timeline");
+  if (tl) await loadContactEmailTimeline(contactId, tl, timelineRes);
+
+  $("#drawer-save-signal")?.addEventListener("click", async () => {
+    const brief = $("#drawer-signal-brief")?.value || "";
+    const result = await crmApiPost("/api/email/signal-brief", { contact_id: contactId, signal_brief: brief });
+    if (result.ok) alert("Signal brief saved");
+    else alert(result.message || "Save failed");
+  });
+  $("#drawer-enroll")?.addEventListener("click", async () => {
+    const brief = $("#drawer-signal-brief")?.value || "";
+    const result = await crmApiPost("/api/email/enroll", { contact_id: contactId, signal_brief: brief });
+    if (result.ok) {
+      alert("Enrolled");
+      loadSequences();
+      openContactDrawer(contactId);
+    } else alert(result.message || "Enroll failed");
+  });
+}
+
+async function loadContactEmailTimeline(contactId, container, preloaded) {
+  const data = preloaded || (await crmApi(`/api/email/contact/${contactId}`));
   if (!data.ok || !data.timeline?.length) {
     container.innerHTML = `<p class="run-meta">No emails sent yet.</p>`;
     return;
   }
-  container.innerHTML = data.timeline
+  const enrollment = data.enrollment;
+  let html = "";
+  if (enrollment) {
+    html += `<p class="run-meta">Sequence: touch ${enrollment.current_step}/5 · ${esc(enrollment.outreach_status)}</p>`;
+  }
+  html += data.timeline
     .map(
       (s) => `
     <div class="email-timeline-item">
       <strong>${esc(s.subject)}</strong>
-      <span class="badge">${esc(s.status)}</span>
+      ${s.sequence_step ? `<span class="badge">Touch ${s.sequence_step}</span>` : ""}
+      <span class="badge ${s.status === "failed" ? "badge-err" : ""}">${esc(s.status)}</span>
+      ${s.failure_reason ? `<span class="badge badge-warn">${esc(s.failure_reason)}</span>` : ""}
       <p class="run-meta">${fmtTime(s.sent_at || s.created_at)} → ${esc(s.to_email)}</p>
-      ${(s.crm_email_events || []).map((e) => `<span class="badge badge-ok">${esc(e.event_type)}</span> `).join("")}
+      ${s.error_message ? `<p class="run-meta" style="color:#a33">${esc(s.error_message)}</p>` : ""}
+      ${(s.crm_email_events || []).map((e) => {
+        const conf = e.payload?.confidence ? ` (${e.payload.confidence})` : "";
+        return `<span class="badge ${e.event_type === "failed" || e.event_type === "rate_limited" ? "badge-err" : ""}">${esc(e.event_type)}${esc(conf)}</span> `;
+      }).join("")}
     </div>`,
     )
     .join("");
+  container.innerHTML = html;
 }
 
 export async function refreshCrm() {
@@ -509,12 +840,12 @@ export async function refreshCrm() {
   try {
     const stats = await crmApi("/api/crm/stats");
     renderStats(stats);
-    await Promise.all([loadContacts(), loadAccounts()]);
+    await Promise.all([loadContacts(), loadAccounts(), loadCompanies()]);
     if ($("#crm-tab-pipeline")?.classList.contains("active")) {
       await loadPipeline();
     }
-    if ($("#crm-tab-outreach")?.classList.contains("active")) {
-      await loadOutreach();
+    if ($("#crm-tab-sequences")?.classList.contains("active")) {
+      await loadSequences();
     }
     if (badge) {
       badge.textContent = `● Live · ${new Date().toLocaleTimeString()}`;
@@ -546,11 +877,31 @@ function initCrm() {
       tab.classList.add("active");
       $(`#crm-tab-${tab.dataset.crmTab}`).classList.add("active");
       if (tab.dataset.crmTab === "pipeline") loadPipeline();
-      if (tab.dataset.crmTab === "outreach") loadOutreach();
+      if (tab.dataset.crmTab === "sequences") loadSequences();
+      if (tab.dataset.crmTab === "companies") {
+        loadCompanyStates();
+        loadCompanies();
+      }
     });
   });
 
-  $("#crm-outreach-refresh")?.addEventListener("click", loadOutreach);
+  $("#crm-sequences-refresh")?.addEventListener("click", loadSequences);
+  $("#crm-sequences-queue")?.addEventListener("click", async () => {
+    const btn = $("#crm-sequences-queue");
+    if (btn) btn.disabled = true;
+    try {
+      const result = await crmApiPost("/api/email/queue/process", {});
+      alert(`Queue: ${result.processed ?? 0} processed`);
+      await loadSequences();
+    } catch (e) {
+      alert(e.message || "Queue process failed");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+  $("#crm-sequences-tier")?.addEventListener("change", loadSequences);
+  $("#crm-sequences-intent")?.addEventListener("change", loadSequences);
+  $("#crm-sequences-due")?.addEventListener("change", loadSequences);
 
   $("#crm-refresh-btn")?.addEventListener("click", refreshCrm);
   $("#drawer-close")?.addEventListener("click", closeDrawer);
@@ -572,6 +923,16 @@ function initCrm() {
   $("#crm-tier-filter")?.addEventListener("change", loadAccounts);
   $("#crm-market-filter")?.addEventListener("change", loadAccounts);
 
+  let companyDebounce;
+  $("#crm-company-search")?.addEventListener("input", () => {
+    clearTimeout(companyDebounce);
+    companyDebounce = setTimeout(loadCompanies, 350);
+  });
+  $("#crm-company-state")?.addEventListener("change", loadCompanies);
+  $("#crm-company-industry")?.addEventListener("change", loadCompanies);
+  $("#crm-company-hiring")?.addEventListener("change", loadCompanies);
+  $("#crm-company-email")?.addEventListener("change", loadCompanies);
+
   $("#crm-pipeline-refresh")?.addEventListener("click", loadPipeline);
   let pipelineDebounce;
   $("#crm-pipeline-search")?.addEventListener("input", () => {
@@ -582,6 +943,7 @@ function initCrm() {
   $("#crm-pipeline-market")?.addEventListener("change", loadPipeline);
 
   loadMarkets();
+  loadCompanyStates();
   startCrmAutoRefresh();
 }
 

@@ -1,5 +1,6 @@
 import { getSupabase } from "./supabase-client.mjs";
 import { PIPELINE_STAGES, normalizePipelineStage } from "./pipeline-stages.mjs";
+import { isNorthAmericaContact } from "./outreach-region.mjs";
 
 const cache = new Map();
 
@@ -31,8 +32,12 @@ export async function crmStats() {
       contacts,
       withEmail,
       withLinkedin,
+      withPhone,
       gojiberry,
       properties,
+      companies,
+      companiesWithEmail,
+      companiesHiring,
       runRes,
     ] = await Promise.all([
       sb.from("crm_accounts").select("*", { count: "exact", head: true }),
@@ -40,8 +45,12 @@ export async function crmStats() {
       sb.from("crm_contacts").select("*", { count: "exact", head: true }),
       sb.from("crm_contacts").select("*", { count: "exact", head: true }).not("email", "is", null).neq("email", ""),
       sb.from("crm_contacts").select("*", { count: "exact", head: true }).not("linkedin_url", "is", null).neq("linkedin_url", ""),
+      sb.from("crm_contacts").select("*", { count: "exact", head: true }).not("phone", "is", null).neq("phone", ""),
       sb.from("crm_contacts").select("*", { count: "exact", head: true }).not("source_payload->gojiberry", "is", null),
       sb.from("crm_properties").select("*", { count: "exact", head: true }),
+      sb.from("crm_companies").select("*", { count: "exact", head: true }),
+      sb.from("crm_companies").select("*", { count: "exact", head: true }).eq("has_email", true),
+      sb.from("crm_companies").select("*", { count: "exact", head: true }).eq("hiring", true),
       sb
         .from("crm_enrichment_runs")
         .select("id, status, accounts_done, accounts_total, contacts_added, credits_used, credits_remaining, started_at")
@@ -50,7 +59,7 @@ export async function crmStats() {
         .maybeSingle(),
     ]);
 
-    for (const res of [accounts, enriched, contacts, withEmail, withLinkedin, gojiberry, properties]) {
+    for (const res of [accounts, enriched, contacts, withEmail, withLinkedin, withPhone, gojiberry, properties, companies, companiesWithEmail, companiesHiring]) {
       if (res.error) throw res.error;
     }
     if (runRes.error && runRes.error.code !== "PGRST116") throw runRes.error;
@@ -61,8 +70,12 @@ export async function crmStats() {
       contacts_total: contacts.count ?? 0,
       contacts_with_email: withEmail.count ?? 0,
       contacts_with_linkedin: withLinkedin.count ?? 0,
+      contacts_with_phone: withPhone.count ?? 0,
       gojiberry_contacts: gojiberry.count ?? 0,
       properties_total: properties.count ?? 0,
+      companies_total: companies.count ?? 0,
+      companies_with_email: companiesWithEmail.count ?? 0,
+      companies_hiring: companiesHiring.count ?? 0,
       run: runRes.data ?? null,
     };
   }, 10000);
@@ -119,8 +132,8 @@ export async function crmAccounts({ q, tier, market, limit = 100, offset = 0 }) 
   }, 12000);
 }
 
-export async function crmContacts({ q, hasEmail, hasLinkedIn, source, limit = 200, offset = 0 }) {
-  const key = `contacts:${q}:${hasEmail}:${hasLinkedIn}:${source}:${limit}:${offset}`;
+export async function crmContacts({ q, hasEmail, hasLinkedIn, source, northAmericaOnly, limit = 200, offset = 0 }) {
+  const key = `contacts:${q}:${hasEmail}:${hasLinkedIn}:${source}:${northAmericaOnly}:${limit}:${offset}`;
   return cached(key, async () => {
     const sb = getSupabase();
     const lim = Number(limit) || 200;
@@ -129,7 +142,7 @@ export async function crmContacts({ q, hasEmail, hasLinkedIn, source, limit = 20
     let query = sb
       .from("crm_contacts")
       .select(
-        "id, name, title, email, phone, email_status, linkedin_url, job_level, enriched_at, enrichment_provider, account_id, crm_accounts(id, group_name, market_name, tier)",
+        "id, name, title, email, phone, email_status, linkedin_url, job_level, enriched_at, enrichment_provider, account_id, source_payload, crm_accounts(id, group_name, market_name, market_key, tier)",
         { count: "exact" },
       );
 
@@ -160,12 +173,17 @@ export async function crmContacts({ q, hasEmail, hasLinkedIn, source, limit = 20
       enriched_at: row.enriched_at,
       enrichment_provider: row.enrichment_provider,
       account_id: row.account_id,
+      source_payload: row.source_payload,
       group_name: row.crm_accounts?.group_name ?? null,
       market_name: row.crm_accounts?.market_name ?? null,
+      market_key: row.crm_accounts?.market_key ?? null,
       tier: row.crm_accounts?.tier ?? null,
+      crm_accounts: row.crm_accounts,
     }));
 
-    return { rows, total: count ?? rows.length };
+    const filtered = northAmericaOnly === "1" ? rows.filter((r) => isNorthAmericaContact(r)) : rows;
+
+    return { rows: filtered, total: northAmericaOnly === "1" ? filtered.length : (count ?? rows.length) };
   }, 12000);
 }
 
@@ -302,4 +320,65 @@ export async function crmUpdateAccountStage(id, stage) {
   if (!data) return null;
   cache.clear();
   return data;
+}
+
+export async function crmCompanies({ q, state, hiring, hasEmail, industry, limit = 200, offset = 0 }) {
+  const key = `companies:${q}:${state}:${hiring}:${hasEmail}:${industry}:${limit}:${offset}`;
+  return cached(key, async () => {
+    const sb = getSupabase();
+    const lim = Number(limit) || 200;
+    const off = Number(offset) || 0;
+
+    let query = sb.from("crm_companies").select("*", { count: "exact" });
+
+    if (q?.trim()) {
+      const term = q.trim();
+      query = query.or(
+        `name.ilike.%${term}%,company_domain.ilike.%${term}%,primary_email.ilike.%${term}%,geo_city.ilike.%${term}%`,
+      );
+    }
+    if (state) query = query.eq("geo_state", state);
+    if (hiring === "1") query = query.eq("hiring", true);
+    if (hasEmail === "1") query = query.eq("has_email", true);
+    if (industry?.trim()) query = query.ilike("industry", `%${industry.trim()}%`);
+
+    const { data, error, count } = await query
+      .order("name", { ascending: true })
+      .range(off, off + lim - 1);
+
+    if (error) throw error;
+    return { rows: data ?? [], total: count ?? (data?.length ?? 0) };
+  }, 12000);
+}
+
+export async function crmCompanyDetail(id) {
+  return cached(`company:${id}`, async () => {
+    const sb = getSupabase();
+    const { data, error } = await sb.from("crm_companies").select("*").eq("id", id).maybeSingle();
+    if (error) throw error;
+    return data;
+  }, 8000);
+}
+
+export async function crmCompanyStates() {
+  return cached("company-states", async () => {
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from("crm_companies")
+      .select("geo_state")
+      .not("geo_state", "is", null)
+      .neq("geo_state", "")
+      .order("geo_state", { ascending: true });
+
+    if (error) throw error;
+
+    const seen = new Set();
+    return (data ?? [])
+      .map((r) => r.geo_state)
+      .filter((s) => {
+        if (!s || seen.has(s)) return false;
+        seen.add(s);
+        return true;
+      });
+  }, 60000);
 }

@@ -225,6 +225,30 @@ async function handleApi(req, res) {
       return send(res, 200, { ok: true, ...data });
     }
 
+    if (route === "/api/crm/company-states" && req.method === "GET") {
+      return send(res, 200, { ok: true, states: await crm.crmCompanyStates() });
+    }
+
+    if (route === "/api/crm/companies" && req.method === "GET") {
+      const data = await crm.crmCompanies({
+        q: url.searchParams.get("q") || "",
+        state: url.searchParams.get("state") || "",
+        hiring: url.searchParams.get("hiring") || "",
+        hasEmail: url.searchParams.get("has_email") || "",
+        industry: url.searchParams.get("industry") || "",
+        limit: url.searchParams.get("limit") || 200,
+        offset: url.searchParams.get("offset") || 0,
+      });
+      return send(res, 200, { ok: true, ...data });
+    }
+
+    const companyMatch = route.match(/^\/api\/crm\/companies\/([^/]+)$/);
+    if (companyMatch && req.method === "GET") {
+      const company = await crm.crmCompanyDetail(companyMatch[1]);
+      if (!company) return send(res, 404, { ok: false, message: "Company not found" });
+      return send(res, 200, { ok: true, company });
+    }
+
     const stageMatch = route.match(/^\/api\/crm\/accounts\/([^/]+)\/stage$/);
     if (stageMatch && req.method === "PATCH") {
       const body = await readBody(req);
@@ -240,14 +264,82 @@ async function handleApi(req, res) {
       return send(res, 200, { ok: true, ...detail });
     }
 
+    const openTrackMatch = route.match(/^\/api\/email\/track\/open\/([^/.]+)/);
+    if (openTrackMatch && req.method === "GET") {
+      const sendId = openTrackMatch[1].replace(/\.png$/i, "");
+      await email.recordTrackingEvent(sendId, "opened", "pixel", {});
+      const buf = email.trackingPixelBuffer();
+      res.writeHead(200, {
+        "Content-Type": "image/gif",
+        "Cache-Control": "no-store",
+        "Content-Length": buf.length,
+      });
+      return res.end(buf);
+    }
+
+    const clickTrackMatch = route.match(/^\/api\/email\/track\/click\/([^/]+)$/);
+    if (clickTrackMatch && req.method === "GET") {
+      const target = url.searchParams.get("u");
+      if (target) await email.recordTrackingEvent(clickTrackMatch[1], "clicked", "pixel", { url: target });
+      res.writeHead(302, { Location: target || "/" });
+      return res.end();
+    }
+
     if (route === "/api/email/stats" && req.method === "GET") {
       const stats = await email.getEmailStats();
       return send(res, 200, { ok: true, ...stats });
     }
 
+    if (route === "/api/email/queue/process" && req.method === "POST") {
+      const result = await email.processSendQueue({ limit: Number(url.searchParams.get("limit")) || 8 });
+      return send(res, 200, { ok: true, ...result });
+    }
+
     if (route === "/api/email/contacts" && req.method === "GET") {
       const contacts = await email.listOutreachContacts({ limit: url.searchParams.get("limit") || 100 });
       return send(res, 200, { ok: true, contacts });
+    }
+
+    if (route === "/api/email/sequences/board" && req.method === "GET") {
+      const board = await email.getSequencesBoard({
+        tier: url.searchParams.get("tier") || "",
+        intent: url.searchParams.get("intent") || "",
+        dueOnly: url.searchParams.get("due") === "1",
+      });
+      return send(res, 200, { ok: true, ...board });
+    }
+
+    if (route === "/api/email/enroll" && req.method === "POST") {
+      const body = await readBody(req);
+      const enrollment = await email.enrollContact({
+        contactId: body.contact_id,
+        signalBrief: body.signal_brief,
+      });
+      return send(res, 200, { ok: true, enrollment });
+    }
+
+    if (route === "/api/email/send-step" && req.method === "POST") {
+      const body = await readBody(req);
+      const result = await email.sendSequenceStep({
+        contactId: body.contact_id,
+        step: body.step,
+        previewOnly: body.preview_only === true,
+        signalBrief: body.signal_brief,
+      });
+      return send(res, 200, { ok: true, ...result });
+    }
+
+    if (route === "/api/email/signal-brief" && req.method === "POST") {
+      const body = await readBody(req);
+      await email.saveContactSignalBrief(body.contact_id, body.signal_brief);
+      return send(res, 200, { ok: true });
+    }
+
+    const enrollmentMatch = route.match(/^\/api\/email\/enrollments\/([^/]+)$/);
+    if (enrollmentMatch && req.method === "PATCH") {
+      const body = await readBody(req);
+      const updated = await email.updateEnrollmentStatus(enrollmentMatch[1], body.outreach_status);
+      return send(res, 200, { ok: true, enrollment: updated });
     }
 
     if (route === "/api/email/send" && req.method === "POST") {
@@ -277,8 +369,8 @@ async function handleApi(req, res) {
 
     const emailContactMatch = route.match(/^\/api\/email\/contact\/([^/]+)$/);
     if (emailContactMatch && req.method === "GET") {
-      const timeline = await email.getContactEmailTimeline(emailContactMatch[1]);
-      return send(res, 200, { ok: true, timeline });
+      const data = await email.getContactEmailTimeline(emailContactMatch[1]);
+      return send(res, 200, { ok: true, timeline: data.sends, enrollment: data.enrollment });
     }
 
     res.writeHead(404);

@@ -51,8 +51,9 @@
       <div class="crm-tabs">
         <button class="crm-tab active" data-crm-tab="contacts">Contacts</button>
         <button class="crm-tab" data-crm-tab="accounts">Operators</button>
+        <button class="crm-tab" data-crm-tab="companies">Companies</button>
         <button class="crm-tab" data-crm-tab="pipeline">Pipeline</button>
-        <button class="crm-tab" data-crm-tab="outreach">Outreach</button>
+        <button class="crm-tab" data-crm-tab="sequences">Sequences</button>
       </div>
 
       <div class="card crm-tab-panel active" id="crm-tab-contacts">
@@ -85,6 +86,26 @@
         <p class="table-meta" id="crm-accounts-meta"></p>
       </div>
 
+      <div class="card crm-tab-panel" id="crm-tab-companies">
+        <div class="toolbar">
+          <input id="crm-company-search" type="search" placeholder="Search name, domain, email, city…" />
+          <select id="crm-company-state"><option value="">All states</option></select>
+          <select id="crm-company-industry">
+            <option value="">All industries</option>
+            <option value="Hospitality">Hospitality</option>
+            <option value="Hotels">Hotels</option>
+            <option value="Real Estate">Real Estate</option>
+            <option value="Wellness">Wellness</option>
+          </select>
+          <label class="check-label"><input type="checkbox" id="crm-company-hiring" /> Hiring</label>
+          <label class="check-label"><input type="checkbox" id="crm-company-email" /> Has email</label>
+        </div>
+        <div class="table-wrap" id="crm-companies-table">
+          <div class="empty">Loading companies…</div>
+        </div>
+        <p class="table-meta" id="crm-companies-meta"></p>
+      </div>
+
       <div class="card crm-tab-panel" id="crm-tab-pipeline">
         <div class="toolbar">
           <input id="crm-pipeline-search" type="search" placeholder="Search operator on board…" />
@@ -104,15 +125,30 @@
         <p class="table-meta" id="crm-pipeline-meta"></p>
       </div>
 
-      <div class="card crm-tab-panel" id="crm-tab-outreach">
-        <div id="crm-outreach-stats" class="stats-grid" style="margin-bottom:1rem"></div>
+      <div class="card crm-tab-panel" id="crm-tab-sequences">
+        <div id="crm-sequences-stats" class="stats-grid" style="margin-bottom:1rem"></div>
         <div class="toolbar">
-          <button class="btn btn-secondary" id="crm-outreach-refresh" type="button">Refresh outreach</button>
+          <select id="crm-sequences-tier">
+            <option value="">All tiers</option>
+            <option value="P0">P0</option>
+            <option value="P1">P1</option>
+            <option value="P2">P2</option>
+          </select>
+          <select id="crm-sequences-intent">
+            <option value="">All signals</option>
+            <option value="just_hired">Just hired</option>
+            <option value="top_active">Top active</option>
+            <option value="linkedin_post">LinkedIn post</option>
+          </select>
+          <label class="check-label"><input type="checkbox" id="crm-sequences-due" /> Due today</label>
+          <button class="btn btn-secondary" id="crm-sequences-refresh" type="button">Refresh board</button>
+          <button class="btn btn-ghost" id="crm-sequences-queue" type="button" title="Process retry queue">Process queue</button>
         </div>
-        <div class="table-wrap" id="crm-outreach-table">
-          <div class="empty">Loading outreach contacts…</div>
+        <p class="pipeline-hint">Drag contacts across columns to track your 5-touch sequence. Send each touch from the card actions.</p>
+        <div id="crm-sequences-board" class="kanban-board sequences-board">
+          <div class="empty">Loading sequences…</div>
         </div>
-        <p class="table-meta" id="crm-outreach-meta"></p>
+        <p class="table-meta" id="crm-sequences-meta"></p>
       </div>
     </section>
 

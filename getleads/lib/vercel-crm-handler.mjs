@@ -86,6 +86,31 @@ export async function handleCrmRoute(req, res, route) {
     return sendJson(res, 200, { ok: true, ...data });
   }
 
+  if (route === "/api/crm/company-states" && req.method === "GET") {
+    const states = await crm.crmCompanyStates();
+    return sendJson(res, 200, { ok: true, states });
+  }
+
+  if (route === "/api/crm/companies" && req.method === "GET") {
+    const data = await crm.crmCompanies({
+      q: req.query.q || "",
+      state: req.query.state || "",
+      hiring: req.query.hiring || "",
+      hasEmail: req.query.has_email || "",
+      industry: req.query.industry || "",
+      limit: req.query.limit || 200,
+      offset: req.query.offset || 0,
+    });
+    return sendJson(res, 200, { ok: true, ...data });
+  }
+
+  const companyMatch = route.match(/^\/api\/crm\/companies\/([^/]+)$/);
+  if (companyMatch && req.method === "GET") {
+    const company = await crm.crmCompanyDetail(companyMatch[1]);
+    if (!company) return sendJson(res, 404, { ok: false, message: "Company not found" });
+    return sendJson(res, 200, { ok: true, company });
+  }
+
   const stageMatch = route.match(/^\/api\/crm\/accounts\/([^/]+)\/stage$/);
   if (stageMatch && req.method === "PATCH") {
     const body = await readJsonBody(req);
