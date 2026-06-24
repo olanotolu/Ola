@@ -4,6 +4,7 @@
   "type": "module",
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",
+    "nodemailer": "^9.0.1",
     "resend": "^4.5.1",
     "svix": "^1.64.1"
   },
@@ -25,7 +26,25 @@
     "getleads:enrich": "node getleads/enrich-worker.mjs",
     "getleads:gojiberry": "node getleads/gojiberry-import.mjs",
     "getleads:queue": "node getleads/export-connection-queue.mjs",
+    "linkedin:connect": "node getleads/linkedin-browser-connect.mjs",
+    "linkedin:connect:dry": "node getleads/linkedin-browser-connect.mjs --dry-run",
+    "linkedin:queue": "node getleads/linkedin-connect-first10.mjs",
+    "browser-use:demo": "bash getleads/browser-use/run.sh",
+    "browser-use:visible": "bash getleads/browser-use/run-visible.sh",
+    "browser-use:doctor": "bash -lc 'cd getleads/browser-use && source .venv/bin/activate && browser-use doctor'",
     "email:inbox:list": "himalaya envelope list --account concya --folder INBOX --page-size 20 --output json",
-    "email:sync": "node getleads/email-inbox-sync.mjs"
+    "email:sync": "node getleads/email-inbox-sync.mjs",
+    "getleads:migrate": "supabase db query --linked -f getleads/migrations/004_outreach_sequences.sql",
+    "outreach:batch1": "node getleads/send-batch-touch1.mjs",
+    "outreach:batch1:dry": "node getleads/send-batch-touch1.mjs 5 --dry-run",
+    "outreach:batch2": "node getleads/send-batch-touch2.mjs",
+    "outreach:batch2:dry": "node getleads/send-batch-touch2.mjs 5 --dry-run",
+    "email:queue": "node getleads/process-send-queue.mjs",
+    "email:queue:requeue": "node getleads/process-send-queue.mjs --requeue-failed",
+    "email:automation:install": "bash getleads/scripts/install-email-automation.sh",
+    "email:automation:uninstall": "bash getleads/scripts/uninstall-email-automation.sh"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
   }
 }

@@ -2,6 +2,6 @@
   "installCommand": "npm install",
   "buildCommand": "npm run vercel:build",
   "rewrites": [
-    { "source": "/api/crm/:path*", "destination": "/api/crm/:path*" }
+    { "source": "/api/email/:rest*", "destination": "/api/email/handler?path=:rest*" }
   ]
 }
